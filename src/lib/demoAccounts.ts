@@ -2,7 +2,14 @@ import { UserProfile } from '../types';
 
 export const IS_DEV_DEMO_HELPER = typeof process === 'undefined' || process.env.NODE_ENV !== 'production';
 
-export const DEMO_ACCOUNTS = [
+export interface DemoAccount {
+  id: string;
+  email: string;
+  password: string;
+  profile: UserProfile;
+}
+
+export const DEMO_ACCOUNTS: DemoAccount[] = [
   {
     id: 'demo-user-1',
     email: 'demo.user1@civicfix.demo',

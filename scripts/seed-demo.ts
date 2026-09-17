@@ -10,7 +10,8 @@ async function seed() {
   const admin = createAdminClient();
   for (const account of DEMO_ACCOUNTS) {
     const { data: existing } = await admin.auth.admin.listUsers();
-    const found = existing?.users?.find((u) => u.email === account.email);
+    const users: { id: string; email?: string | null }[] = existing?.users ?? [];
+    const found = users.find((u) => u.email === account.email);
     let userId = found?.id;
     if (!userId) {
       const created = await admin.auth.admin.createUser({
@@ -24,7 +25,7 @@ async function seed() {
     if (!userId) continue;
     await admin.from('profiles').upsert({
       id: userId,
-      full_name: account.profile.display_name,
+      display_name: account.profile.display_name,
       email: account.email,
       phone: account.profile.phone,
       city: account.profile.city,
