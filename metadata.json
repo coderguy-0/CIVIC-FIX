@@ -1,0 +1,6 @@
+{
+  "name": "CivicFix",
+  "description": "India-focused civic problem tracking and follow-up platform to document local issues, find official channels, and track resolution progress.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
