@@ -125,10 +125,10 @@ export default function App() {
 
   // Load initial data
   useEffect(() => {
-    const loadedComplaints = getStoredComplaints();
-    const loadedPublicReports = getStoredPublicReports();
     const loadedProfile = getStoredProfile();
-    const loadedTasks = getStoredVolunteerTasks();
+    const loadedComplaints = getStoredComplaints(loadedProfile?.id);
+    const loadedPublicReports = getStoredPublicReports();
+    const loadedTasks = getStoredVolunteerTasks(loadedProfile?.id);
     const loadedAudits = getModerationAudits();
 
     setComplaints(loadedComplaints);
@@ -181,21 +181,29 @@ export default function App() {
 
   // Auth Handlers
   const handleAuthSuccess = (profile: UserProfile, role: UserRole) => {
-    saveSession(profile, role);
-    setSession({ user: profile, role });
+    const actualRole = profile.role || role;
+    saveSession(profile, actualRole);
+    setSession({ user: profile, role: actualRole });
     setUserProfile(profile);
     setSecurityNotice(null);
+    setComplaints(getStoredComplaints(profile.id));
+    setVolunteerTasks(getStoredVolunteerTasks(profile.id));
 
-    if (role === 'volunteer') {
+    if (actualRole === 'volunteer') {
       navigateToPath('/app/volunteer');
+    } else if (actualRole === 'admin' || actualRole === 'moderator') {
+      navigateToPath('/app/admin');
     } else {
       navigateToPath('/app/user');
     }
   };
 
   const handleLogout = () => {
+    fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
     clearSession();
     setSession(null);
+    setComplaints([]);
+    setVolunteerTasks([]);
     navigateToPath('/auth/login');
   };
 
@@ -264,13 +272,13 @@ export default function App() {
       updateComplaint(complaintId, { status });
     }
 
-    setComplaints(getStoredComplaints());
+    setComplaints(getStoredComplaints(userProfile.id));
   };
 
   // Citizen Complaint Operations
   const handleCreateComplaint = (data: any): Complaint => {
-    const newComplaint = createComplaint(data);
-    const updatedComplaints = getStoredComplaints();
+    const newComplaint = createComplaint({ ...data, user_id: userProfile.id });
+    const updatedComplaints = getStoredComplaints(userProfile.id);
     setComplaints(updatedComplaints);
     setPublicReports(getStoredPublicReports());
     setSelectedComplaintId(newComplaint.id);
@@ -280,12 +288,12 @@ export default function App() {
 
   const handleUpdateComplaint = (id: string, updates: Partial<Complaint>) => {
     updateComplaint(id, updates);
-    setComplaints(getStoredComplaints());
+    setComplaints(getStoredComplaints(userProfile.id));
   };
 
   const handleDeleteComplaint = (id: string) => {
     deleteComplaint(id);
-    setComplaints(getStoredComplaints());
+    setComplaints(getStoredComplaints(userProfile.id));
     setPublicReports(getStoredPublicReports());
     if (selectedComplaintId === id) {
       setSelectedComplaintId(null);
@@ -298,17 +306,17 @@ export default function App() {
     eventData: Omit<ComplaintEvent, 'id' | 'complaint_id' | 'created_at'>
   ) => {
     addComplaintEvent(complaintId, eventData);
-    setComplaints(getStoredComplaints());
+    setComplaints(getStoredComplaints(userProfile.id));
   };
 
   const handleAddReminder = (complaintId: string, remindAt: string, message: string) => {
     addReminder(complaintId, remindAt, message);
-    setComplaints(getStoredComplaints());
+    setComplaints(getStoredComplaints(userProfile.id));
   };
 
   const handleToggleReminder = (complaintId: string, reminderId: string) => {
     toggleReminderCompleted(complaintId, reminderId);
-    setComplaints(getStoredComplaints());
+    setComplaints(getStoredComplaints(userProfile.id));
   };
 
   const handleToggleConfirmation = (reportId: string) => {
@@ -327,7 +335,7 @@ export default function App() {
   };
 
   const handleResetApp = () => {
-    setComplaints(getStoredComplaints());
+    setComplaints(getStoredComplaints(userProfile.id));
     setPublicReports(getStoredPublicReports());
     setUserProfile(getStoredProfile());
     setModerationAudits([]);
@@ -379,7 +387,22 @@ export default function App() {
 
         <VolunteerPortalLayout
           profile={userProfile}
-          complaints={complaints}
+          complaints={publicReports.map((r) => ({
+            id: r.id,
+            user_id: 'public',
+            title: r.public_title,
+            description: r.public_description,
+            category: r.category,
+            status: r.moderation_status === 'approved' ? 'submitted' : 'draft',
+            locality: r.approximate_location,
+            district: r.district,
+            state_code: r.state_code,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+            attachments: [],
+            events: [],
+            reminders: [],
+          })) as Complaint[]}
           tasks={volunteerTasks}
           onLogout={handleLogout}
           onToggleVerificationStatus={handleToggleVolunteerVerification}

@@ -35,50 +35,30 @@ async function startServer() {
   // ============================================================================
   app.post('/api/auth/login', async (req: Request, res: Response) => {
     try {
-      const { email, password, roleHint } = req.body;
+      const { email, password } = req.body;
       if (!email || !password) {
         return res.status(400).json({
           error: { code: 'VALIDATION_ERROR', message: 'Email and password are required.' },
         });
       }
 
-      const normalizedEmail = String(email).trim().toLowerCase();
-
-      // Simulated role lookup adhering to security rule:
-      // "Never trust role supplied by browser. Read authenticated user's role from database."
-      let role: 'user' | 'volunteer' | 'moderator' = 'user';
-      let displayName = 'Concerned Citizen';
-      let userId = 'user-001';
-
-      if (normalizedEmail.includes('volunteer')) {
-        role = 'volunteer';
-        displayName = 'Priya Patel';
-        userId = 'vol-001';
-      } else if (normalizedEmail.includes('moderator')) {
-        role = 'moderator';
-        displayName = 'Suresh Kumar';
-        userId = 'mod-001';
-      } else {
-        role = 'user';
-        displayName = 'Aarav Sharma';
-        userId = 'user-001';
+      const { findDemoAccount } = await import('./src/lib/demoAccounts');
+      const account = findDemoAccount(String(email), String(password));
+      if (!account) {
+        return res.status(401).json({
+          error: { code: 'INVALID_CREDENTIALS', message: 'Incorrect email or password.' },
+        });
       }
 
-      const redirectUrl = role === 'volunteer' ? '/app/volunteer' : '/app/user';
+      // Role is always taken from stored profile, never from the request body.
+      const role = account.profile.role;
+      const redirectUrl =
+        role === 'volunteer' ? '/app/volunteer' : role === 'admin' || role === 'moderator' ? '/app/admin' : '/app/user';
 
       res.json({
         data: {
-          user: {
-            id: userId,
-            email: normalizedEmail,
-            display_name: displayName,
-            role,
-            city: 'Bengaluru',
-            state: 'Karnataka',
-            preferred_language: 'en',
-            created_at: new Date().toISOString(),
-          },
-          token: `cf_token_${userId}_${Date.now()}`,
+          user: account.profile,
+          token: `cf_token_${account.id}_${Date.now()}`,
           redirectUrl,
         },
       });

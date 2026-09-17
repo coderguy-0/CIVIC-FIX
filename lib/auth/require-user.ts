@@ -4,7 +4,7 @@ import { AppError } from '../api/errors';
 export interface AuthenticatedUser {
   id: string;
   email?: string;
-  role?: 'user' | 'moderator' | 'admin';
+  role?: 'user' | 'volunteer' | 'moderator' | 'admin';
 }
 
 export async function requireUser(request?: Request | any) {
@@ -50,24 +50,6 @@ export async function requireUser(request?: Request | any) {
   } = await supabase.auth.getUser();
 
   if (error || !user) {
-    // Check if we are running in local development mode without configured Supabase keys
-    const isMockAuthEnabled =
-      !process.env.SUPABASE_URL ||
-      process.env.SUPABASE_URL.includes('xyzcompany') ||
-      process.env.NODE_ENV !== 'production';
-
-    if (isMockAuthEnabled) {
-      // Fallback to local default citizen session for seamless local execution
-      return {
-        supabase,
-        user: {
-          id: '00000000-0000-0000-0000-000000000001',
-          email: 'citizen@example.in',
-          role: 'user' as const,
-        },
-      };
-    }
-
     throw new AppError('UNAUTHENTICATED', 'You must be signed in.', 401);
   }
 
