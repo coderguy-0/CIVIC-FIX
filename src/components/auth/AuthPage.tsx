@@ -17,22 +17,29 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { authenticate, registerAccount, AuthSession } from '../../lib/storage';
+import { DEMO_ACCOUNTS } from '../../lib/demoAccounts';
 
 export type AuthMode = 'login' | 'signup' | 'forgot-password' | 'reset-password';
 export type AccountRole = 'user' | 'volunteer';
 
 export interface AuthPageProps {
-  initialMode?: AuthMode;
-  onAuthenticated: (session: AuthSession) => void;
+  initialMode?: AuthMode | 'login' | 'signup' | 'forgot' | 'reset';
+  onAuthenticated?: (session: AuthSession) => void;
+  onAuthSuccess?: (profile: AuthSession['user'], role: AccountRole) => void;
   onNavigateRoute?: (route: string) => void;
+  onNavigatePath?: (path: string) => void;
 }
 
 export const AuthPage: React.FC<AuthPageProps> = ({
   initialMode = 'login',
   onAuthenticated,
-  onNavigateRoute
+  onAuthSuccess,
+  onNavigateRoute,
+  onNavigatePath
 }) => {
-  const [mode, setMode] = useState<AuthMode>(initialMode);
+  const normalizedInitial: AuthMode =
+    initialMode === 'forgot' ? 'forgot-password' : initialMode === 'reset' ? 'reset-password' : (initialMode as AuthMode);
+  const [mode, setMode] = useState<AuthMode>(normalizedInitial);
   const [selectedRole, setSelectedRole] = useState<AccountRole>('user');
 
   // Form Fields
@@ -77,30 +84,28 @@ export const AuthPage: React.FC<AuthPageProps> = ({
     setErrorMessage(null);
   };
 
+  const navigateAuth = (path: string) => {
+    if (onNavigatePath) onNavigatePath(path);
+    else if (onNavigateRoute) onNavigateRoute(path);
+  };
+
+  const finishAuth = (session: AuthSession) => {
+    if (onAuthSuccess) onAuthSuccess(session.user, session.user.role === 'volunteer' ? 'volunteer' : 'user');
+    if (onAuthenticated) onAuthenticated(session);
+  };
+
   const handleSwitchMode = (newMode: AuthMode) => {
     setMode(newMode);
     setErrorMessage(null);
     setSuccessNotice(null);
-    if (onNavigateRoute) {
-      onNavigateRoute(`/auth/${newMode}`);
-    }
+    navigateAuth(`/auth/${newMode}`);
   };
 
-  const handleQuickDemo = (demoType: 'user' | 'volunteer' | 'moderator') => {
+  const handleQuickDemo = (account: (typeof DEMO_ACCOUNTS)[number]) => {
     setErrorMessage(null);
-    if (demoType === 'user') {
-      setEmail('citizen@example.in');
-      setPassword('password123');
-      setSelectedRole('user');
-    } else if (demoType === 'volunteer') {
-      setEmail('volunteer@civicfix.in');
-      setPassword('password123');
-      setSelectedRole('volunteer');
-    } else {
-      setEmail('moderator@civicfix.in');
-      setPassword('password123');
-      setSelectedRole('user');
-    }
+    setEmail(account.email);
+    setPassword(account.password);
+    setSelectedRole(account.profile.role === 'volunteer' ? 'volunteer' : 'user');
   };
 
   const handleToggleInterest = (interest: string) => {
@@ -123,16 +128,36 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           return;
         }
 
-        const res = authenticate(email, password);
-        if (!res.success || !res.session) {
-          setErrorMessage(res.error || 'Incorrect email or password.');
-          setIsLoading(false);
-          return;
+        let session: AuthSession | undefined;
+        try {
+          const apiRes = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+          });
+          const payload = await apiRes.json();
+          if (apiRes.ok && payload?.data?.user) {
+            session = {
+              user: payload.data.user,
+              token: payload.data.token,
+              expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            };
+          }
+        } catch {
+          /* fall back to local demo auth */
         }
 
-        // Authentication success:
-        // Server rule: session.user.role determines actual portal
-        onAuthenticated(res.session);
+        if (!session) {
+          const res = authenticate(email, password);
+          if (!res.success || !res.session) {
+            setErrorMessage(res.error || 'Incorrect email or password.');
+            setIsLoading(false);
+            return;
+          }
+          session = res.session;
+        }
+
+        finishAuth(session);
       } else if (mode === 'signup') {
         if (!fullName.trim()) {
           setErrorMessage('Full name is required.');
@@ -198,13 +223,19 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           return;
         }
 
-        // Simulate password reset email
-        setTimeout(() => {
-          setIsLoading(false);
-          setSuccessNotice(
-            `A password reset link has been dispatched to ${email}. Check your email to reset your credentials.`
-          );
-        }, 600);
+        try {
+          await fetch('/api/auth/forgot-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email }),
+          });
+        } catch {
+          /* generic success to avoid account enumeration */
+        }
+        setSuccessNotice(
+          'If an account exists for that email, a password reset link has been sent.'
+        );
+        setIsLoading(false);
         return;
       } else if (mode === 'reset-password') {
         if (password.length < 6) {
@@ -619,36 +650,29 @@ export const AuthPage: React.FC<AuthPageProps> = ({
           </div>
         )}
 
-        {/* Quick Demo Fill Helper for Reviewers */}
-        <div className="mt-6 pt-4 border-t border-dashed border-[#e1eae5]">
-          <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#66736e] mb-2 font-medium">
-            <Sparkles className="w-3.5 h-3.5 text-[#087f5b]" />
-            <span>Instant Demo Sign-In:</span>
+        {import.meta.env.MODE !== 'production' && (
+          <div className="mt-6 pt-4 border-t border-dashed border-[#e1eae5]">
+            <div className="flex items-center justify-center gap-1.5 text-[11px] text-[#66736e] mb-2 font-medium">
+              <Sparkles className="w-3.5 h-3.5 text-[#087f5b]" />
+              <span>CivicFix Demo Accounts</span>
+            </div>
+            <div className="grid grid-cols-1 gap-2">
+              {DEMO_ACCOUNTS.map((account) => (
+                <button
+                  key={account.id}
+                  type="button"
+                  onClick={() => handleQuickDemo(account)}
+                  className="text-left px-3 py-2 rounded-xl bg-[#f8faf9] hover:bg-[#eef6f2] border border-[#dce5e1] transition-colors"
+                >
+                  <div className="text-[11px] font-bold text-[#17201d]">
+                    {account.profile.display_name} · {account.profile.role}
+                  </div>
+                  <div className="text-[10px] text-[#66736e]">{account.email}</div>
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('user')}
-              className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#f0f6f3] hover:bg-[#e2ede7] text-[#1e4d3c] border border-[#d2e2da] transition-colors"
-            >
-              👤 Citizen Demo
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('volunteer')}
-              className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#e7f5ff] hover:bg-[#d0ebff] text-[#1864ab] border border-[#a5d8ff] transition-colors"
-            >
-              🤝 Volunteer Demo
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickDemo('moderator')}
-              className="px-2.5 py-1 text-[10px] font-bold rounded-lg bg-[#fff9db] hover:bg-[#fff3bf] text-[#f08c00] border border-[#ffe066] transition-colors"
-            >
-              🛡️ Moderator Demo
-            </button>
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Footer Branding & Privacy Assurance */}

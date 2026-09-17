@@ -13,8 +13,14 @@ import {
   AppNotification,
   ComplaintNote
 } from '../types';
-import { INITIAL_COMPLAINTS, INITIAL_PUBLIC_REPORTS } from '../data/mockInitialData';
-import { INITIAL_VOLUNTEER_TASKS } from '../data/mockVolunteerData';
+import { INITIAL_PUBLIC_REPORTS } from '../data/mockInitialData';
+import {
+  DEMO_USER1_COMPLAINTS,
+  DEMO_USER2_COMPLAINTS,
+  DEMO_VOL1_TASKS,
+  DEMO_VOL2_TASKS,
+} from '../data/demoUserComplaints';
+import { DEMO_ACCOUNTS } from './demoAccounts';
 
 const COMPLAINTS_KEY = 'civicfix_complaints_v1';
 const PUBLIC_REPORTS_KEY = 'civicfix_public_reports_v1';
@@ -40,68 +46,12 @@ export interface AuthSession {
   expires_at: string;
 }
 
-const DEFAULT_ACCOUNTS: StoredAccount[] = [
-  {
-    id: 'user-001',
-    email: 'citizen@example.in',
-    passwordHash: 'password123',
-    profile: {
-      id: 'user-001',
-      display_name: 'Aarav Sharma',
-      email: 'citizen@example.in',
-      phone: '+91 98765 43210',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      role: 'user',
-      preferred_language: 'en',
-      created_at: '2026-09-01T10:00:00.000Z'
-    }
-  },
-  {
-    id: 'vol-001',
-    email: 'volunteer@civicfix.in',
-    passwordHash: 'password123',
-    profile: {
-      id: 'vol-001',
-      display_name: 'Priya Patel',
-      email: 'volunteer@civicfix.in',
-      phone: '+91 98765 11223',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      role: 'volunteer',
-      preferred_language: 'en',
-      created_at: '2026-09-05T08:30:00.000Z',
-      volunteer_profile: {
-        user_id: 'vol-001',
-        verification_status: 'pending',
-        locality: 'Indiranagar & Koramangala',
-        organization: 'Bengaluru Civic Action Group',
-        motivation: 'Committed to verifying citizen complaints and partnering with municipal ward engineers for swift resolutions.',
-        availability: 'Weekends & weekday evenings (10 hrs/week)',
-        languages: ['English', 'Kannada', 'Hindi'],
-        interests: ['Roads', 'Water', 'Sanitation', 'Street Lighting', 'Drainage'],
-        created_at: '2026-09-05T08:30:00.000Z',
-        updated_at: '2026-09-16T10:00:00.000Z'
-      }
-    }
-  },
-  {
-    id: 'mod-001',
-    email: 'moderator@civicfix.in',
-    passwordHash: 'password123',
-    profile: {
-      id: 'mod-001',
-      display_name: 'Suresh Kumar',
-      email: 'moderator@civicfix.in',
-      phone: '+91 98765 99887',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      role: 'moderator',
-      preferred_language: 'en',
-      created_at: '2026-08-15T12:00:00.000Z'
-    }
-  }
-];
+const DEFAULT_ACCOUNTS: StoredAccount[] = DEMO_ACCOUNTS.map((account) => ({
+  id: account.id,
+  email: account.email,
+  passwordHash: account.password,
+  profile: account.profile,
+}));
 
 export function getStoredAccounts(): StoredAccount[] {
   try {
@@ -226,7 +176,7 @@ export function registerAccount(data: {
   if (data.role === 'volunteer') {
     volunteerProfile = {
       user_id: newId,
-      verification_status: 'pending',
+      verification_status: 'verified',
       locality: data.locality || '',
       motivation: data.motivation || '',
       organization: data.organization || '',
@@ -274,7 +224,7 @@ export function registerAccount(data: {
 // ----------------------------------------------------------------------------
 // VOLUNTEER TASKS
 // ----------------------------------------------------------------------------
-export function getStoredVolunteerTasks(): VolunteerTask[] {
+export function getAllVolunteerTasks(): VolunteerTask[] {
   try {
     const raw = localStorage.getItem(VOLUNTEER_TASKS_KEY);
     if (raw) {
@@ -284,8 +234,15 @@ export function getStoredVolunteerTasks(): VolunteerTask[] {
   } catch (e) {
     console.warn('Could not read volunteer tasks from storage', e);
   }
-  saveVolunteerTasks(INITIAL_VOLUNTEER_TASKS);
-  return INITIAL_VOLUNTEER_TASKS;
+  const seeded = [...DEMO_VOL1_TASKS, ...DEMO_VOL2_TASKS];
+  saveVolunteerTasks(seeded);
+  return seeded;
+}
+
+export function getStoredVolunteerTasks(volunteerId?: string): VolunteerTask[] {
+  const all = getAllVolunteerTasks();
+  if (!volunteerId) return all;
+  return all.filter((t) => t.assigned_to === volunteerId);
 }
 
 export function saveVolunteerTasks(tasks: VolunteerTask[]): void {
@@ -321,7 +278,7 @@ export function updateVolunteerTask(
   taskId: string,
   updates: Partial<VolunteerTask>
 ): VolunteerTask | null {
-  const tasks = getStoredVolunteerTasks();
+  const tasks = getAllVolunteerTasks();
   const index = tasks.findIndex(t => t.id === taskId);
   if (index === -1) return null;
 
@@ -406,9 +363,12 @@ export function saveComplaints(complaints: Complaint[]): void {
   }
 }
 
-export function getComplaintById(id: string): Complaint | undefined {
-  const all = getStoredComplaints();
-  return all.find(c => c.id === id);
+export function getComplaintById(id: string, ownerId?: string): Complaint | undefined {
+  const all = getAllComplaints();
+  const found = all.find(c => c.id === id);
+  if (!found) return undefined;
+  if (ownerId && found.user_id !== ownerId) return undefined;
+  return found;
 }
 
 export function createComplaint(
@@ -418,7 +378,7 @@ export function createComplaint(
     photo_file?: { name: string; type: string; size: number; data_url: string };
   }
 ): Complaint {
-  const all = getStoredComplaints();
+  const all = getAllComplaints();
   const id = 'cf-comp-' + Math.random().toString(36).substring(2, 9);
   const now = new Date().toISOString();
 
@@ -523,7 +483,7 @@ export function createComplaint(
 }
 
 export function updateComplaint(id: string, updates: Partial<Complaint>): Complaint | undefined {
-  const all = getStoredComplaints();
+  const all = getAllComplaints();
   const idx = all.findIndex(c => c.id === id);
   if (idx === -1) return undefined;
 
@@ -541,7 +501,7 @@ export function updateComplaint(id: string, updates: Partial<Complaint>): Compla
 }
 
 export function deleteComplaint(id: string): boolean {
-  const all = getStoredComplaints();
+  const all = getAllComplaints();
   const filtered = all.filter(c => c.id !== id);
   if (filtered.length === all.length) return false;
   saveComplaints(filtered);
@@ -558,7 +518,7 @@ export function addComplaintEvent(
   complaintId: string,
   eventData: Omit<ComplaintEvent, 'id' | 'complaint_id' | 'created_at'>
 ): ComplaintEvent | undefined {
-  const all = getStoredComplaints();
+  const all = getAllComplaints();
   const complaint = all.find(c => c.id === complaintId);
   if (!complaint) return undefined;
 
@@ -595,7 +555,7 @@ export function addReminder(
   remindAt: string,
   message: string
 ): Reminder | undefined {
-  const all = getStoredComplaints();
+  const all = getAllComplaints();
   const complaint = all.find(c => c.id === complaintId);
   if (!complaint) return undefined;
 
@@ -618,7 +578,7 @@ export function addReminder(
 }
 
 export function toggleReminderCompleted(complaintId: string, reminderId: string): boolean {
-  const all = getStoredComplaints();
+  const all = getAllComplaints();
   const complaint = all.find(c => c.id === complaintId);
   if (!complaint) return false;
 
@@ -754,7 +714,8 @@ export function getModerationAudits(): ModerationAction[] {
 
 // Data Export & Erase (DPDP Act compliance)
 export function exportAllUserData(): string {
-  const complaints = getStoredComplaints();
+  const session = getStoredSession();
+  const complaints = getStoredComplaints(session?.user.id);
   const profile = getStoredProfile();
   const exportPayload = {
     platform: 'CivicFix',
@@ -966,7 +927,7 @@ export function addNotification(notif: Omit<AppNotification, 'id' | 'created_at'
 // COMPLAINT NOTES & EVIDENCE HELPERS
 // ---------------------------------------------------------------------------
 export function addComplaintNote(complaintId: string, noteText: string): ComplaintNote {
-  const complaints = getStoredComplaints();
+  const complaints = getAllComplaints();
   const comp = complaints.find(c => c.id === complaintId);
   const newNote: ComplaintNote = {
     id: `note-${Date.now()}`,
@@ -982,7 +943,7 @@ export function addComplaintNote(complaintId: string, noteText: string): Complai
 }
 
 export function addComplaintAttachment(complaintId: string, attachment: any): void {
-  const complaints = getStoredComplaints();
+  const complaints = getAllComplaints();
   const comp = complaints.find(c => c.id === complaintId);
   if (comp) {
     comp.attachments.push(attachment);
