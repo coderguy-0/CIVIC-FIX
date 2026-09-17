@@ -13,7 +13,7 @@ import {
   AppNotification,
   ComplaintNote
 } from '../types';
-import { INITIAL_PUBLIC_REPORTS } from '../data/mockInitialData';
+import { INITIAL_COMPLAINTS, INITIAL_PUBLIC_REPORTS } from '../data/mockInitialData';
 import {
   DEMO_USER1_COMPLAINTS,
   DEMO_USER2_COMPLAINTS,
@@ -339,7 +339,7 @@ export function saveProfile(profile: UserProfile): void {
   }
 }
 
-export function getStoredComplaints(): Complaint[] {
+export function getAllComplaints(): Complaint[] {
   try {
     const raw = localStorage.getItem(COMPLAINTS_KEY);
     if (raw) {
@@ -351,8 +351,15 @@ export function getStoredComplaints(): Complaint[] {
   } catch (e) {
     console.warn('Could not read complaints from storage', e);
   }
-  saveComplaints(INITIAL_COMPLAINTS);
-  return INITIAL_COMPLAINTS;
+  const seeded = [...INITIAL_COMPLAINTS, ...DEMO_USER1_COMPLAINTS, ...DEMO_USER2_COMPLAINTS];
+  saveComplaints(seeded);
+  return seeded;
+}
+
+export function getStoredComplaints(userId?: string): Complaint[] {
+  const all = getAllComplaints();
+  if (!userId) return all;
+  return all.filter((c) => c.user_id === userId);
 }
 
 export function saveComplaints(complaints: Complaint[]): void {
